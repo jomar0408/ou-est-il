@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f6f5c">
+<title>Où est-il ?</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root { --vert:#1f6f5c; --vert-clair:#e6f2ee; --gris:#6b7280; --rouge:#c0392b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:#f6f7f6; color:#1c1c1c; }
+  header { background:var(--vert); color:#fff; padding:14px 16px; padding-top:calc(14px + env(safe-area-inset-top)); position:sticky; top:0; z-index:5; }
+  header h1 { margin:0 0 10px; font-size:20px; }
+  .recherche { width:100%; padding:12px 14px; border:none; border-radius:10px; font-size:17px; }
+  main { padding:12px 12px 100px; }
+  .compteur { color:var(--gris); font-size:14px; margin:4px 4px 10px; }
+  .carte { display:flex; gap:12px; background:#fff; border-radius:12px; padding:10px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,.08); cursor:pointer; align-items:center; }
+  .carte img, .carte .sans-photo { width:72px; height:72px; border-radius:8px; object-fit:cover; flex-shrink:0; background:var(--vert-clair); display:flex; align-items:center; justify-content:center; color:var(--vert); font-size:28px; }
+  .carte .nom { font-weight:600; font-size:17px; margin-bottom:4px; }
+  .carte .lieu { color:var(--gris); font-size:14px; }
+  mark { background:#ffe58a; padding:0 1px; border-radius:2px; }
+  .vide { text-align:center; color:var(--gris); padding:50px 20px; }
+  .fab { position:fixed; right:20px; bottom:calc(20px + env(safe-area-inset-bottom)); width:62px; height:62px; border-radius:50%; background:var(--vert); color:#fff; font-size:34px; border:none; box-shadow:0 4px 12px rgba(0,0,0,.25); }
+  .ecran { position:fixed; inset:0; background:#f6f7f6; z-index:10; overflow-y:auto; display:none; }
+  .ecran.ouvert { display:block; }
+  .barre { display:flex; align-items:center; gap:10px; background:var(--vert); color:#fff; padding:14px 12px; padding-top:calc(14px + env(safe-area-inset-top)); position:sticky; top:0; }
+  .barre h2 { margin:0; font-size:18px; flex:1; }
+  .barre button { background:none; border:none; color:#fff; font-size:16px; padding:6px 8px; }
+  .contenu { padding:16px; }
+  label { display:block; font-weight:600; margin:14px 0 6px; }
+  input[type=text], textarea { width:100%; padding:12px; font-size:16px; border:1px solid #cfd6d3; border-radius:10px; background:#fff; font-family:inherit; }
+  textarea { min-height:80px; resize:vertical; }
+  .zone-photo { border:2px dashed #b9c7c2; border-radius:12px; padding:14px; text-align:center; background:#fff; }
+  .zone-photo img { max-width:100%; max-height:300px; border-radius:8px; display:block; margin:0 auto 10px; }
+  .btn { display:inline-block; padding:12px 18px; border-radius:10px; border:none; font-size:16px; font-weight:600; margin:4px; }
+  .btn-vert { background:var(--vert); color:#fff; }
+  .btn-clair { background:var(--vert-clair); color:var(--vert); }
+  .btn-rouge { background:#fdecea; color:var(--rouge); }
+  .btn-large { width:100%; margin:20px 0 0; padding:15px; font-size:17px; }
+  .detail-photo { width:100%; border-radius:12px; display:block; background:#000; }
+  .detail-nom { font-size:22px; font-weight:700; margin:16px 0 6px; }
+  .detail-lieu { font-size:17px; background:#fff; padding:12px; border-radius:10px; border-left:4px solid var(--vert); }
+  .detail-date { color:var(--gris); font-size:13px; margin-top:10px; }
+  .actions { display:flex; gap:8px; margin-top:20px; }
+  .actions .btn { flex:1; margin:0; }
+  .plein-ecran { position:fixed; inset:0; background:#000; z-index:20; display:none; align-items:center; justify-content:center; }
+  .plein-ecran.ouvert { display:flex; }
+  .plein-ecran img { max-width:100%; max-height:100%; }
+  .menu-sauvegarde { margin-top:30px; padding-top:16px; border-top:1px solid #dde3e0; }
+  .menu-sauvegarde p { color:var(--gris); font-size:14px; }
+  .toast { position:fixed; left:50%; bottom:100px; transform:translateX(-50%); background:#222; color:#fff; padding:10px 18px; border-radius:20px; font-size:15px; z-index:30; opacity:0; transition:opacity .3s; pointer-events:none; }
+  .toast.visible { opacity:1; }
+</style>
+</head>
+<body>
+
+<header>
+  <div style="display:flex;align-items:center;justify-content:space-between">
+    <h1>📍 Où est-il ?</h1>
+    <button id="btnReglages" style="background:none;border:none;color:#fff;font-size:22px">⚙️</button>
+  </div>
+  <input id="recherche" class="recherche" type="search" placeholder="Rechercher un objet (ex : bac)…" autocomplete="off">
+</header>
+
+<main>
+  <div class="compteur" id="compteur"></div>
+  <div id="liste"></div>
+</main>
+
+<button class="fab" id="btnAjouter" aria-label="Ajouter un objet">+</button>
+
+<!-- Écran ajout / modification -->
+<section class="ecran" id="ecranForm">
+  <div class="barre">
+    <button id="formRetour">← Retour</button>
+    <h2 id="formTitre">Nouvel objet</h2>
+  </div>
+  <div class="contenu">
+    <label for="champNom">Nom de l'objet</label>
+    <input type="text" id="champNom" placeholder="ex : Mon baccalauréat">
+
+    <label for="champLieu">Description de l'emplacement</label>
+    <textarea id="champLieu" placeholder="ex : Grand cartable en cuir, armoire de la chambre"></textarea>
+
+    <label>Photo de l'emplacement</label>
+    <div class="zone-photo">
+      <img id="apercu" style="display:none" alt="Aperçu">
+      <button class="btn btn-vert" id="btnCamera">📷 Prendre une photo</button>
+      <button class="btn btn-clair" id="btnGalerie">🖼️ Galerie</button>
+      <button class="btn btn-rouge" id="btnSupprPhoto" style="display:none">Retirer</button>
+      <input type="file" id="inputCamera" accept="image/*" capture="environment" hidden>
+      <input type="file" id="inputGalerie" accept="image/*" hidden>
+    </div>
+
+    <button class="btn btn-vert btn-large" id="btnEnregistrer">💾 Enregistrer</button>
+  </div>
+</section>
+
+<!-- Écran détail -->
+<section class="ecran" id="ecranDetail">
+  <div class="barre">
+    <button id="detailRetour">← Retour</button>
+    <h2>Emplacement</h2>
+  </div>
+  <div class="contenu">
+    <div id="detailPhotoZone"></div>
+    <div class="detail-nom" id="detailNom"></div>
+    <div class="detail-lieu" id="detailLieu"></div>
+    <div class="detail-date" id="detailDate"></div>
+    <div class="actions">
+      <button class="btn btn-clair" id="btnModifier">✏️ Modifier</button>
+      <button class="btn btn-rouge" id="btnSupprimer">🗑️ Supprimer</button>
+    </div>
+  </div>
+</section>
+
+<!-- Écran réglages -->
+<section class="ecran" id="ecranReglages">
+  <div class="barre">
+    <button id="reglagesRetour">← Retour</button>
+    <h2>Sauvegarde</h2>
+  </div>
+  <div class="contenu">
+    <p>Tes objets et photos sont enregistrés <b>uniquement sur ce téléphone</b>. Fais une sauvegarde de temps en temps (avant de changer de téléphone ou de vider le navigateur).</p>
+    <button class="btn btn-vert btn-large" id="btnExporter">⬇️ Exporter une sauvegarde</button>
+    <button class="btn btn-clair btn-large" id="btnImporter">⬆️ Restaurer une sauvegarde</button>
+    <input type="file" id="inputImport" accept=".json,application/json" hidden>
+    <div class="menu-sauvegarde">
+      <p id="infoStockage"></p>
+    </div>
+  </div>
+</section>
+
+<div class="plein-ecran" id="pleinEcran"><img id="imgPleinEcran" alt=""></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------- Base de données locale (IndexedDB) ----------
+const DB_NOM = 'ou-est-il', STORE = 'objets';
+let db;
+function ouvrirDB() {
+  return new Promise((ok, ko) => {
+    const req = indexedDB.open(DB_NOM, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id' });
+    req.onsuccess = () => { db = req.result; ok(); };
+    req.onerror = () => ko(req.error);
+  });
+}
+function tx(mode, action) {
+  return new Promise((ok, ko) => {
+    const t = db.transaction(STORE, mode);
+    const r = action(t.objectStore(STORE));
+    t.oncomplete = () => ok(r && r.result);
+    t.onerror = () => ko(t.error);
+  });
+}
+const toutLire   = () => tx('readonly', s => s.getAll());
+const enregistrer = o => tx('readwrite', s => s.put(o));
+const supprimer  = id => tx('readwrite', s => s.delete(id));
+
+// ---------- Utilitaires ----------
+const $ = id => document.getElementById(id);
+// Normalise : minuscules + sans accents ("Baccalauréat" -> "baccalaureat")
+const norm = t => (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const echap = t => (t || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function surligner(texte, q) {
+  if (!q) return echap(texte);
+  const n = norm(texte), i = n.indexOf(q);
+  if (i < 0) return echap(texte);
+  return echap(texte.slice(0, i)) + '<mark>' + echap(texte.slice(i, i + q.length)) + '</mark>' + echap(texte.slice(i + q.length));
+}
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('visible'); setTimeout(() => t.classList.remove('visible'), 2000); }
+
+// Réduit la photo (max 1280 px) pour économiser la place
+function compresser(fichier) {
+  return new Promise((ok, ko) => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 1280, ratio = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * ratio); c.height = Math.round(img.height * ratio);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      ok(c.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = ko;
+    img.src = URL.createObjectURL(fichier);
+  });
+}
+
+// ---------- Liste + recherche ----------
+let objets = [], courant = null, photoForm = null, enEdition = null;
+
+async function rafraichir() {
+  objets = (await toutLire()).sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+  afficherListe();
+}
+function afficherListe() {
+  const q = norm($('recherche').value.trim());
+  const res = q ? objets.filter(o => norm(o.nom).includes(q) || norm(o.lieu).includes(q)) : objets;
+  $('compteur').textContent = objets.length === 0 ? '' :
+    q ? `${res.length} résultat(s) pour « ${$('recherche').value.trim()} »` : `${objets.length} objet(s) enregistré(s)`;
+  if (objets.length === 0) {
+    $('liste').innerHTML = '<div class="vide">Aucun objet pour l\'instant.<br><br>Appuie sur <b>+</b> pour enregistrer ton premier objet.</div>';
+    return;
+  }
+  if (res.length === 0) { $('liste').innerHTML = '<div class="vide">Aucun objet trouvé 🤔</div>'; return; }
+  $('liste').innerHTML = res.map(o => `
+    <div class="carte" data-id="${o.id}">
+      ${o.photo ? `<img src="${o.photo}" alt="">` : '<div class="sans-photo">📦</div>'}
+      <div><div class="nom">${surligner(o.nom, q)}</div><div class="lieu">${surligner(o.lieu, q)}</div></div>
+    </div>`).join('');
+}
+$('recherche').addEventListener('input', afficherListe);
+$('liste').addEventListener('click', e => {
+  const c = e.target.closest('.carte'); if (c) ouvrirDetail(c.dataset.id);
+});
+
+// ---------- Navigation entre écrans ----------
+function ouvrir(id) { $(id).classList.add('ouvert'); $(id).scrollTop = 0; }
+function fermer(id) { $(id).classList.remove('ouvert'); }
+
+// ---------- Détail ----------
+function ouvrirDetail(id) {
+  courant = objets.find(o => o.id === id); if (!courant) return;
+  $('detailPhotoZone').innerHTML = courant.photo
+    ? `<img class="detail-photo" id="detailImg" src="${courant.photo}" alt="Photo de l'emplacement">`
+    : '<div class="vide">Pas de photo</div>';
+  $('detailNom').textContent = courant.nom;
+  $('detailLieu').textContent = courant.lieu || '—';
+  $('detailDate').textContent = 'Enregistré le ' + new Date(courant.date).toLocaleDateString('fr-FR', { day:'numeric', month:'long', year:'numeric' });
+  ouvrir('ecranDetail');
+}
+$('detailPhotoZone').addEventListener('click', () => {
+  if (!courant || !courant.photo) return;
+  $('imgPleinEcran').src = courant.photo; $('pleinEcran').classList.add('ouvert');
+});
+$('pleinEcran').addEventListener('click', () => $('pleinEcran').classList.remove('ouvert'));
+$('detailRetour').onclick = () => fermer('ecranDetail');
+$('btnSupprimer').onclick = async () => {
+  if (!confirm(`Supprimer « ${courant.nom} » ?`)) return;
+  await supprimer(courant.id); fermer('ecranDetail'); await rafraichir(); toast('Objet supprimé');
+};
+$('btnModifier').onclick = () => ouvrirForm(courant);
+
+// ---------- Formulaire ----------
+function majApercu() {
+  $('apercu').style.display = photoForm ? 'block' : 'none';
+  if (photoForm) $('apercu').src = photoForm;
+  $('btnSupprPhoto').style.display = photoForm ? 'inline-block' : 'none';
+  $('btnCamera').textContent = photoForm ? '📷 Reprendre' : '📷 Prendre une photo';
+}
+function ouvrirForm(obj) {
+  enEdition = obj || null;
+  $('formTitre').textContent = obj ? 'Modifier l\'objet' : 'Nouvel objet';
+  $('champNom').value = obj ? obj.nom : '';
+  $('champLieu').value = obj ? obj.lieu : '';
+  photoForm = obj ? obj.photo : null;
+  majApercu(); ouvrir('ecranForm');
+  if (!obj) setTimeout(() => $('champNom').focus(), 100);
+}
+$('btnAjouter').onclick = () => ouvrirForm(null);
+$('formRetour').onclick = () => fermer('ecranForm');
+$('btnCamera').onclick = () => $('inputCamera').click();
+$('btnGalerie').onclick = () => $('inputGalerie').click();
+$('btnSupprPhoto').onclick = () => { photoForm = null; majApercu(); };
+async function photoChoisie(e) {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  try { photoForm = await compresser(f); majApercu(); } catch { toast('Photo illisible'); }
+}
+$('inputCamera').onchange = photoChoisie;
+$('inputGalerie').onchange = photoChoisie;
+
+$('btnEnregistrer').onclick = async () => {
+  const nom = $('champNom').value.trim(), lieu = $('champLieu').value.trim();
+  if (!nom) { toast('Indique le nom de l\'objet'); $('champNom').focus(); return; }
+  if (!lieu && !photoForm) { toast('Ajoute une description ou une photo'); return; }
+  const obj = {
+    id: enEdition ? enEdition.id : (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+    nom, lieu, photo: photoForm, date: Date.now()
+  };
+  try {
+    await enregistrer(obj);
+  } catch (err) { toast('Erreur : espace insuffisant ?'); return; }
+  fermer('ecranForm');
+  await rafraichir();
+  if (enEdition) ouvrirDetail(obj.id); else fermer('ecranDetail');
+  toast('Enregistré ✔');
+};
+
+// ---------- Sauvegarde / restauration ----------
+$('btnReglages').onclick = async () => {
+  $('infoStockage').textContent = `${objets.length} objet(s) sur ce téléphone.`;
+  if (navigator.storage && navigator.storage.estimate) {
+    const e = await navigator.storage.estimate();
+    $('infoStockage').textContent += ` Espace utilisé : ${(e.usage / 1048576).toFixed(1)} Mo.`;
+  }
+  ouvrir('ecranReglages');
+};
+$('reglagesRetour').onclick = () => fermer('ecranReglages');
+$('btnExporter').onclick = () => {
+  const blob = new Blob([JSON.stringify({ app: 'ou-est-il', version: 1, objets })], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'sauvegarde-ou-est-il-' + new Date().toISOString().slice(0, 10) + '.json';
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$('btnImporter').onclick = () => $('inputImport').click();
+$('inputImport').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (!Array.isArray(data.objets)) throw 0;
+    for (const o of data.objets) if (o.id && o.nom) await enregistrer(o);
+    await rafraichir(); toast(`${data.objets.length} objet(s) restauré(s)`); fermer('ecranReglages');
+  } catch { toast('Fichier de sauvegarde invalide'); }
+};
+
+// Bouton "retour" du téléphone : ferme l'écran ouvert
+history.pushState(null, '');
+window.addEventListener('popstate', () => {
+  const pe = $('pleinEcran');
+  if (pe.classList.contains('ouvert')) pe.classList.remove('ouvert');
+  else { const o = [...document.querySelectorAll('.ecran.ouvert')].pop(); if (o) o.classList.remove('ouvert'); }
+  history.pushState(null, '');
+});
+
+// ---------- Démarrage ----------
+ouvrirDB().then(rafraichir).then(() => {
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+});
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
